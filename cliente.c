@@ -42,7 +42,7 @@ void Select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *errorfds, struc
 }
 
 int main(int argc, char **argv) {
-	int    sockfd;
+	int    sockfd, n;
 	char   recvline[MAXLINE + 1];
 	char   error[MAXLINE + 1];
 	struct sockaddr_in servaddr;
@@ -77,54 +77,39 @@ int main(int argc, char **argv) {
 		exit(1);
 	}
 
-	// inet_ntoa converte o endereço ipv4 da estrutura servaddr_returned para uma string contendo o endereço ipv4 na notação padrão
-	// printf("Connection with server established: %s\n", inet_ntoa(servaddr_returned.sin_addr));
-	// ntohs converte a porta em sin_port da ordem de bytes da rede para a ordem padrão do sistema de um short
-	// printf("Port: %d\n\n", (int) ntohs(servaddr_returned.sin_port));
-
-	// Fim do código adicionado
-
-	// read vai tentar ouvir até 4096 bytes de sockfd e atribuir isso ao buffer recvline. A função retornará o valor total de bytes lidos
-	// Essa leitura acontecerá até n retornar 0 (fim de arquivo) ou um número negativo (erro)
 	char file[MAXLINE];
 	fd_set rset;
 	FD_ZERO(&rset);
-	char filename[200];
-	scanf("%s", filename);
-	printf("%s\n", filename);
-	FILE *fp = fopen(filename, "r");
-	if (!fp) {
-		perror("DEU RUIM");
-		exit(1);
-	}
-	int maxfd1;
+	int maxfd1, send_end = 0;
 	while (1) {
-		FD_SET(fileno(fp), &rset);
+		if (!send_end)
+		   FD_SET(fileno(stdin), &rset);
 		FD_SET(sockfd, &rset);
-		// printf("%d %d\n", sockfd, fileno(stdin));
-		maxfd1 = fileno(fp) > sockfd ? fileno(fp) + 1 : sockfd + 1;
+		maxfd1 = fileno(stdin) > sockfd ? fileno(stdin) + 1 : sockfd + 1;
 		Select(maxfd1, &rset, NULL, NULL, NULL);
 		// Atividade no socket
 		if (FD_ISSET(sockfd, &rset)){
-			if (read(sockfd , recvline , MAXLINE) == 0) {
+			if ((n = read(sockfd , recvline , MAXLINE)) == 0 && !send_end) {
 				perror("str_cli: server terminated prematurely");
-				exit(1);
+				exit(0);
+			} else if (n == 0 && send_end) {
+				break; //success
 			}
-			// recvline[n] = 0;
-			// printf("Server's response:\n");
-			// printf("%s\n", recvline);
+			recvline[n] = 0;
 			fputs(recvline, stdout);
 		}
 		// Atividade na entrada padrão
-		if (FD_ISSET(fileno(fp), &rset)) {
-			if (fgets(file, MAXLINE, fp) == NULL)
-				break;
-			// printf("AQUI %s",file);
+		if (FD_ISSET(fileno(stdin), &rset) && !send_end) {
+			if (fgets(file, MAXLINE, stdin) == NULL) {
+				send_end = 1;
+				FD_CLR(fileno(stdin), &rset);
+				shutdown(sockfd, SHUT_WR);
+				continue;
+			}
+			
 			write(sockfd, file, strlen(file));
 		}
 	}
-
-	// fclose(fp);
 
 	exit(0);
 }
